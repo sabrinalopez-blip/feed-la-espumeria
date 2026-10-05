@@ -1,0 +1,4 @@
+requests==2.32.*
+pillow==11.*
+numpy==2.*
+google-cloud-storage==2.*
