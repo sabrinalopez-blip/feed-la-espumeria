@@ -98,3 +98,71 @@ def to_skus(products: list[dict]) -> list[Sku]:
                 clusters=p.get("productClusters") or {},
             )
     return list(skus.values())
+
+
+# ---------------------------------------------------------------------------
+# Fuente principal: XML de la colección "CATALOGO ORKA" que genera VTEX.
+# El cliente elige qué productos llevan frame sumándolos/sacándolos de esa colección.
+# ---------------------------------------------------------------------------
+XML_FEED = "https://laespumeria.vtexcommercestable.com.br/XMLData/feed_prueba.xml"
+G = "{http://base.google.com/ns/1.0}"
+
+
+def _ars(text: str | None) -> float:
+    """'ARS 2.526.100,00' -> 2526100.0"""
+    t = re.sub(r"[^\d,]", "", text or "").replace(",", ".")
+    return float(t) if t else 0.0
+
+
+def _amount(text: str | None) -> float:
+    """'80,677.50 ARS' -> 80677.5"""
+    t = re.sub(r"[^\d.]", "", text or "")
+    return float(t) if t else 0.0
+
+
+def fetch_xml_skus(session: requests.Session | None = None, url: str = XML_FEED) -> list[Sku]:
+    import xml.etree.ElementTree as ET
+
+    s = session or requests.Session()
+    r = s.get(url, timeout=120)
+    r.raise_for_status()
+    root = ET.fromstring(r.content)
+    out: list[Sku] = []
+    for it in root.iter("item"):
+        def g(tag: str) -> str:
+            el = it.find(G + tag)
+            return (el.text or "").strip() if el is not None else ""
+
+        sku_id = g("id")
+        title_el = it.find("title")
+        desc_el = it.find("description")
+        price = _ars(g("price"))
+        sale = _ars(g("sale_price")) or price
+        if not sku_id or sale <= 0:
+            continue
+        inst = it.find(G + "installment")
+        n = v = None
+        if inst is not None:
+            m = inst.find(G + "months")
+            a = inst.find(G + "amount")
+            n = int(re.sub(r"\D", "", m.text or "") or 0) or None if m is not None else None
+            v = _amount(a.text) if a is not None else None
+        link = g("link").replace("laespumeria.vtexcommercestable.com.br", "www.laespumeria.com")
+        link = re.sub(r"\?idsku=\d+$", "", link)
+        out.append(Sku(
+            id=sku_id,
+            product_id=g("mpn") or sku_id,
+            title=(title_el.text or "").strip() if title_el is not None else "",
+            description=_clean(desc_el.text if desc_el is not None else ""),
+            link=link,
+            image_url=g("image_link") or None,
+            list_price=max(price, sale),
+            price=sale,
+            available=True,
+            brand=g("brand") or "La Espumería",
+            product_type=g("product_type"),
+            ref_id=g("mpn"),
+            n_cuotas=n if (n or 0) > 1 else None,
+            cuota_value=v,
+        ))
+    return out

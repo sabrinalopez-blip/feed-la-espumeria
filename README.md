@@ -5,7 +5,7 @@ Genera para cada SKU la imagen 1080×1080 con el marco AO (% OFF, precio tachado
 y publica un CSV con los **mismos IDs y columnas** que el feed de Orka, así los conjuntos de productos y anuncios no se rompen.
 
 ## Cómo funciona
-1. Lee la API pública de VTEX (`/api/catalog_system/pub/products/search`), sin credenciales.
+1. Lee el XML de la colección **CATALOGO ORKA** de VTEX (`XMLData/feed_prueba.xml`, se regenera todos los días). El cliente elige qué productos entran sumándolos o sacándolos de esa colección. (Alternativa: `SOURCE=api` lee todo el catálogo por la API pública.)
 2. Por SKU: precio de lista (`ListPrice`), precio (`Price`), máximo de cuotas sin interés con tarjeta de crédito y la **primera foto** (igual que Orka).
 3. Renderiza solo lo que cambió (hash de foto + precios + cuotas). Las imágenes van a `gs://<bucket>/la-espumeria/img/<sku>_<hash>.jpg`; el nombre cambia cuando cambia el precio, así Meta vuelve a bajar la imagen.
 4. Publica `https://storage.googleapis.com/<bucket>/la-espumeria/feed.csv`.

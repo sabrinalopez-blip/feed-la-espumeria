@@ -20,6 +20,7 @@ import io
 import json
 import logging
 import os
+import re
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
@@ -34,7 +35,8 @@ import vtex
 TEMPLATE_VERSION = "ao-v1"   # cambiar si se modifica el diseño -> fuerza re-render de todo
 PREFIX = os.environ.get("PREFIX", "la-espumeria")
 BUCKET = os.environ.get("BUCKET")
-OVERRIDES_CSV_URL = os.environ.get("OVERRIDES_CSV_URL")  # opcional: Sheet publicado como CSV
+OVERRIDES_CSV_URL = os.environ.get("OVERRIDES_CSV_URL")
+SOURCE = os.environ.get("SOURCE", "xml")  # "xml" = colección CATALOGO ORKA (default) | "api" = todo el catálogo
 GOOGLE_PRODUCT_CATEGORY = "Home & Garden"
 FEED_COLUMNS = ["id", "title", "description", "availability", "condition", "price", "sale_price",
                 "link", "image_link", "brand", "google_product_category", "product_type",
@@ -108,6 +110,8 @@ def fingerprint(s: vtex.Sku) -> str:
 
 def build_image(s: vtex.Sku, session: requests.Session) -> bytes:
     r = session.get(s.image_url, timeout=60)
+    if r.status_code != 200 and re.search(r"_\d+$", s.image_url):
+        r = session.get(re.sub(r"_\d+$", "", s.image_url), timeout=60)
     r.raise_for_status()
     photo = Image.open(io.BytesIO(r.content))
     img = render.render(photo, s.list_price, s.price, s.n_cuotas, s.cuota_value)
@@ -120,7 +124,10 @@ def run(out_dir: str | None, limit: int | None, workers: int) -> int:
     session.headers["User-Agent"] = "BullMetrix-feed/1.0"
     store = Storage(BUCKET, out_dir)
 
-    skus = vtex.to_skus(vtex.fetch_products(session))
+    if SOURCE == "api":
+        skus = vtex.to_skus(vtex.fetch_products(session))
+    else:
+        skus = vtex.fetch_xml_skus(session)
     skus.sort(key=lambda s: int(s.id) if s.id.isdigit() else s.id)
     if limit:
         skus = skus[:limit]
